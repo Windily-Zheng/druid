@@ -22,6 +22,8 @@ package org.apache.druid.segment.loading;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.Inject;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.apache.druid.guice.annotations.Json;
 import org.apache.druid.java.util.common.FileUtils;
 import org.apache.druid.java.util.common.ISE;
@@ -38,10 +40,12 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
+ *
  */
-public class SegmentLoaderLocalCacheManager implements SegmentLoader
-{
-  private static final EmittingLogger log = new EmittingLogger(SegmentLoaderLocalCacheManager.class);
+public class SegmentLoaderLocalCacheManager implements SegmentLoader {
+
+  private static final EmittingLogger log = new EmittingLogger(
+      SegmentLoaderLocalCacheManager.class);
 
   private final IndexIO indexIO;
   private final SegmentLoaderConfig config;
@@ -52,25 +56,21 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
   // This directoryWriteRemoveLock is used when creating or removing a directory
   private final Object directoryWriteRemoveLock = new Object();
 
+  // Add memory cache
+  private final Map<DataSegment, Segment> entries = new LinkedHashMap<>(16, 0.75f, true);
+
   /**
    * A map between segment and referenceCountingLocks.
    *
-   * These locks should be acquired whenever getting or deleting files for a segment.
-   * If different threads try to get or delete files simultaneously, one of them creates a lock first using
+   * These locks should be acquired whenever getting or deleting files for a segment. If different
+   * threads try to get or delete files simultaneously, one of them creates a lock first using
    * {@link #createOrGetLock}. And then, all threads compete with each other to get the lock.
    * Finally, the lock should be released using {@link #unlock}.
    *
    * An example usage is:
    *
-   * final ReferenceCountingLock lock = createOrGetLock(segment);
-   * synchronized (lock) {
-   *   try {
-   *     doSomething();
-   *   }
-   *   finally {
-   *     unlock(lock);
-   *   }
-   * }
+   * final ReferenceCountingLock lock = createOrGetLock(segment); synchronized (lock) { try {
+   * doSomething(); } finally { unlock(lock); } }
    */
   private final ConcurrentHashMap<DataSegment, ReferenceCountingLock> segmentLocks = new ConcurrentHashMap<>();
 
@@ -84,8 +84,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
       IndexIO indexIO,
       SegmentLoaderConfig config,
       @Json ObjectMapper mapper
-  )
-  {
+  ) {
     this.indexIO = indexIO;
     this.config = config;
     this.jsonMapper = mapper;
@@ -103,15 +102,14 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
   }
 
   @Override
-  public boolean isSegmentLoaded(final DataSegment segment)
-  {
+  public boolean isSegmentLoaded(final DataSegment segment) {
     return findStorageLocationIfLoaded(segment) != null;
   }
 
-  private StorageLocation findStorageLocationIfLoaded(final DataSegment segment)
-  {
+  private StorageLocation findStorageLocationIfLoaded(final DataSegment segment) {
     for (StorageLocation location : locations) {
-      File localStorageDir = new File(location.getPath(), DataSegmentPusher.getDefaultStorageDir(segment, false));
+      File localStorageDir = new File(location.getPath(),
+          DataSegmentPusher.getDefaultStorageDir(segment, false));
       if (localStorageDir.exists()) {
         return location;
       }
@@ -120,15 +118,25 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
   }
 
   @Override
-  public Segment getSegment(DataSegment segment, boolean lazy) throws SegmentLoadingException
-  {
+  public Segment getSegment(DataSegment segment, boolean lazy) throws SegmentLoadingException {
     final ReferenceCountingLock lock = createOrGetLock(segment);
+
+    Segment returnSegment;
+
+//    log.info("Getting a segment");
+
+    // Load from memory cache
+    if (entries.containsKey(segment)) {
+      log.info("Loading a segment from cache");
+      returnSegment = entries.get(segment);
+      return returnSegment;
+    }
+
     final File segmentFiles;
     synchronized (lock) {
       try {
         segmentFiles = getSegmentFiles(segment);
-      }
-      finally {
+      } finally {
         unlock(segment, lock);
       }
     }
@@ -138,20 +146,30 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
     if (factoryJson.exists()) {
       try {
         factory = jsonMapper.readValue(factoryJson, SegmentizerFactory.class);
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
         throw new SegmentLoadingException(e, "%s", e.getMessage());
       }
     } else {
       factory = new MMappedQueryableSegmentizerFactory(indexIO);
     }
 
-    return factory.factorize(segment, segmentFiles, lazy);
+    returnSegment = factory.factorize(segment, segmentFiles, lazy);
+
+    // Put into memory cache
+    synchronized (lock) {
+      try {
+        log.info("Putting a segment into cache");
+        entries.put(segment, returnSegment);
+      } finally {
+        unlock(segment, lock);
+      }
+    }
+
+    return returnSegment;
   }
 
   @Override
-  public File getSegmentFiles(DataSegment segment) throws SegmentLoadingException
-  {
+  public File getSegmentFiles(DataSegment segment) throws SegmentLoadingException {
     final ReferenceCountingLock lock = createOrGetLock(segment);
     synchronized (lock) {
       try {
@@ -162,22 +180,21 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
           loc = loadSegmentWithRetry(segment, storageDir);
         }
         return new File(loc.getPath(), storageDir);
-      }
-      finally {
+      } finally {
         unlock(segment, lock);
       }
     }
   }
 
   /**
-   * location may fail because of IO failure, most likely in two cases:<p>
-   * 1. druid don't have the write access to this location, most likely the administrator doesn't config it correctly<p>
-   * 2. disk failure, druid can't read/write to this disk anymore
+   * location may fail because of IO failure, most likely in two cases:<p> 1. druid don't have the
+   * write access to this location, most likely the administrator doesn't config it correctly<p> 2.
+   * disk failure, druid can't read/write to this disk anymore
    *
    * Locations are fetched using {@link StorageLocationSelectorStrategy}.
    */
-  private StorageLocation loadSegmentWithRetry(DataSegment segment, String storageDirStr) throws SegmentLoadingException
-  {
+  private StorageLocation loadSegmentWithRetry(DataSegment segment, String storageDirStr)
+      throws SegmentLoadingException {
     Iterator<StorageLocation> locationsIterator = strategy.getLocations();
 
     while (locationsIterator.hasNext()) {
@@ -189,27 +206,26 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
         try {
           loadInLocationWithStartMarker(segment, storageDir);
           return loc;
-        }
-        catch (SegmentLoadingException e) {
+        } catch (SegmentLoadingException e) {
           try {
             log.makeAlert(
                 e,
                 "Failed to load segment in current location [%s], try next location if any",
                 loc.getPath().getAbsolutePath()
             ).addData("location", loc.getPath().getAbsolutePath()).emit();
-          }
-          finally {
+          } finally {
             loc.removeSegmentDir(storageDir, segment);
             cleanupCacheFiles(loc.getPath(), storageDir);
           }
         }
       }
     }
-    throw new SegmentLoadingException("Failed to load segment %s in all locations.", segment.getId());
+    throw new SegmentLoadingException("Failed to load segment %s in all locations.",
+        segment.getId());
   }
 
-  private void loadInLocationWithStartMarker(DataSegment segment, File storageDir) throws SegmentLoadingException
-  {
+  private void loadInLocationWithStartMarker(DataSegment segment, File storageDir)
+      throws SegmentLoadingException {
     // We use a marker to prevent the case where a segment is downloaded, but before the download completes,
     // the parent directories of the segment are removed
     final File downloadStartMarker = new File(storageDir, "downloadStartMarker");
@@ -219,10 +235,10 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
       }
       try {
         if (!downloadStartMarker.createNewFile()) {
-          throw new SegmentLoadingException("Was not able to create new download marker for [%s]", storageDir);
+          throw new SegmentLoadingException("Was not able to create new download marker for [%s]",
+              storageDir);
         }
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
         throw new SegmentLoadingException(e, "Unable to create marker file for [%s]", storageDir);
       }
     }
@@ -233,8 +249,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
     }
   }
 
-  private void loadInLocation(DataSegment segment, File storageDir) throws SegmentLoadingException
-  {
+  private void loadInLocation(DataSegment segment, File storageDir) throws SegmentLoadingException {
     // LoadSpec isn't materialized until here so that any system can interpret Segment without having to have all the
     // LoadSpec dependencies.
     final LoadSpec loadSpec = jsonMapper.convertValue(segment.getLoadSpec(), LoadSpec.class);
@@ -250,8 +265,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
   }
 
   @Override
-  public void cleanup(DataSegment segment)
-  {
+  public void cleanup(DataSegment segment) {
     if (!config.isDeleteOnRemove()) {
       return;
     }
@@ -270,7 +284,8 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
         // in this case, findStorageLocationIfLoaded() will think segment is located in the failed storageDir which is actually not.
         // So we should always clean all possible locations here
         for (StorageLocation location : locations) {
-          File localStorageDir = new File(location.getPath(), DataSegmentPusher.getDefaultStorageDir(segment, false));
+          File localStorageDir = new File(location.getPath(),
+              DataSegmentPusher.getDefaultStorageDir(segment, false));
           if (localStorageDir.exists()) {
             // Druid creates folders of the form dataSource/interval/version/partitionNum.
             // We need to clean up all these directories if they are all empty.
@@ -278,15 +293,13 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
             location.removeSegmentDir(localStorageDir, segment);
           }
         }
-      }
-      finally {
+      } finally {
         unlock(segment, lock);
       }
     }
   }
 
-  private void cleanupCacheFiles(File baseFile, File cacheFile)
-  {
+  private void cleanupCacheFiles(File baseFile, File cacheFile) {
     if (cacheFile.equals(baseFile)) {
       return;
     }
@@ -295,8 +308,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
       log.info("Deleting directory[%s]", cacheFile);
       try {
         FileUtils.deleteDirectory(cacheFile);
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
         log.error(e, "Unable to remove directory[%s]", cacheFile);
       }
     }
@@ -310,8 +322,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
     }
   }
 
-  private ReferenceCountingLock createOrGetLock(DataSegment dataSegment)
-  {
+  private ReferenceCountingLock createOrGetLock(DataSegment dataSegment) {
     return segmentLocks.compute(
         dataSegment,
         (segment, lock) -> {
@@ -328,8 +339,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
   }
 
   @SuppressWarnings("ObjectEquality")
-  private void unlock(DataSegment dataSegment, ReferenceCountingLock lock)
-  {
+  private void unlock(DataSegment dataSegment, ReferenceCountingLock lock) {
     segmentLocks.compute(
         dataSegment,
         (segment, existingLock) -> {
@@ -350,30 +360,26 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader
   }
 
   @VisibleForTesting
-  private static class ReferenceCountingLock
-  {
+  private static class ReferenceCountingLock {
+
     private int numReferences;
 
-    private void increment()
-    {
+    private void increment() {
       ++numReferences;
     }
 
-    private void decrement()
-    {
+    private void decrement() {
       --numReferences;
     }
   }
 
   @VisibleForTesting
-  public ConcurrentHashMap<DataSegment, ReferenceCountingLock> getSegmentLocks()
-  {
+  public ConcurrentHashMap<DataSegment, ReferenceCountingLock> getSegmentLocks() {
     return segmentLocks;
   }
 
   @VisibleForTesting
-  public List<StorageLocation> getLocations()
-  {
+  public List<StorageLocation> getLocations() {
     return locations;
   }
 }
