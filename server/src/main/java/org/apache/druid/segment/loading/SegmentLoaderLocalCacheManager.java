@@ -24,6 +24,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.Inject;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import org.apache.druid.guice.annotations.Json;
 import org.apache.druid.java.util.common.FileUtils;
 import org.apache.druid.java.util.common.ISE;
@@ -56,8 +57,11 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
   // This directoryWriteRemoveLock is used when creating or removing a directory
   private final Object directoryWriteRemoveLock = new Object();
 
-  // Add memory cache
+  // Memory cache
   private final Map<DataSegment, Segment> entries = new LinkedHashMap<>(16, 0.75f, true);
+  private final int memoryCacheSize;  // max number of segments in cache
+  private int hitNum;
+  private int totalNum;
 
   /**
    * A map between segment and referenceCountingLocks.
@@ -99,6 +103,9 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
       );
     }
     this.strategy = config.getStorageLocationSelectorStrategy(locations);
+    this.memoryCacheSize = 100;
+    this.hitNum = 0;
+    this.totalNum = 0;
   }
 
   @Override
@@ -122,13 +129,13 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
     final ReferenceCountingLock lock = createOrGetLock(segment);
 
     Segment returnSegment;
-
-//    log.info("Getting a segment");
+    totalNum++;
 
     // Load from memory cache
     if (entries.containsKey(segment)) {
-      log.info("Loading a segment from cache");
       returnSegment = entries.get(segment);
+      log.info("Load segment: " + segment.getId() + " from cache successfully");
+      hitNum++;
       return returnSegment;
     }
 
@@ -158,12 +165,35 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
     // Put into memory cache
     synchronized (lock) {
       try {
-        log.info("Putting a segment into cache");
+        // Eviction
+        if (entries.size() + 1 > memoryCacheSize) {
+          log.info("Need to evict a segment from cache");
+          // LRU
+          int numToEvict = 1;
+          int freeNum = 0;
+          for (Iterator<Entry<DataSegment, Segment>> it = entries.entrySet().iterator();
+              it.hasNext(); ) {
+            Map.Entry<DataSegment, Segment> entry = it.next();
+            it.remove();
+            log.info("Evict segment: " + entry.getKey().getId() + " successfully");
+            freeNum++;
+            if (freeNum >= numToEvict) {
+              break;
+            }
+          }
+        }
+
+        // Put into cache
         entries.put(segment, returnSegment);
+        log.info("Put segment: " + segment.getId() + " into cache successfully");
       } finally {
         unlock(segment, lock);
       }
     }
+
+    double hitRate = (double) hitNum / totalNum * 100;
+    log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRate);
+//    log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + String.format("%.2f", hitRate));
 
     return returnSegment;
   }
