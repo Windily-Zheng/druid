@@ -139,21 +139,23 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
     // Load from memory cache
     if (useCache && entries.containsKey(segment)) {
       returnSegment = entries.get(segment);
+      long loadEnd = System.nanoTime();
+
       log.info("Load segment: " + segment.getId() + " from cache successfully");
       hitNum++;
 
+      // Hit rate
       double hitRate = (double) hitNum / totalNum * 100;
       BigDecimal hitRateDecimal = new BigDecimal(hitRate);
       double hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
       log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRateOutput + "%");
 
-      long loadEnd = System.nanoTime();
+      // Total load time
       totalLoadTime += (loadEnd - loadStart);
-      double totalLoadTimeUs = totalLoadTime / 1000d;
+      double totalLoadTimeUs = totalLoadTime / 1000000d; // ns => ms
       BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTimeUs);
       double totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
-      log.info("Total load time: " + totalTimeOutput + " us");
-//    log.info("Total load time: " + totalLoadTime + " ns");
+      log.info("Total load time: " + totalTimeOutput + " ms");
 
       return returnSegment;
     }
@@ -205,24 +207,36 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
 
           // Put into cache
           entries.put(segment, returnSegment);
+          long loadEnd = System.nanoTime();
+
           log.info("Put segment: " + segment.getId() + " into cache successfully");
+
+          // Hit rate
+          double hitRate = (double) hitNum / totalNum * 100;
+          BigDecimal hitRateDecimal = new BigDecimal(hitRate);
+          double hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+          log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRateOutput + "%");
+
+          // Total load time
+          totalLoadTime += (loadEnd - loadStart);
+          double totalLoadTimeUs = totalLoadTime / 1000000d; // ns => ms
+          BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTimeUs);
+          double totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+          log.info("Total load time: " + totalTimeOutput + " ms");
         } finally {
           unlock(segment, lock);
         }
       }
-      double hitRate = (double) hitNum / totalNum * 100;
-      BigDecimal hitRateDecimal = new BigDecimal(hitRate);
-      double hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
-      log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRateOutput + "%");
+      return returnSegment;
     }
 
+    // Total load time (for no cache version)
     long loadEnd = System.nanoTime();
     totalLoadTime += (loadEnd - loadStart);
-    double totalLoadTimeUs = totalLoadTime / 1000d;
+    double totalLoadTimeUs = totalLoadTime / 1000000d; // ns => ms
     BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTimeUs);
     double totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
-    log.info("Total load time: " + totalTimeOutput + " us");
-//    log.info("Total load time: " + totalLoadTime + " ns");
+    log.info("Total load time: " + totalTimeOutput + " ms");
 
     return returnSegment;
   }
