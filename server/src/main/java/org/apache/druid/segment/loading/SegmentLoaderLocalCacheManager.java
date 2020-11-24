@@ -59,6 +59,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
   private final Object directoryWriteRemoveLock = new Object();
 
   // Memory cache
+  private final boolean useCache = false;
   private final Map<DataSegment, Segment> entries = new LinkedHashMap<>(16, 0.75f, true);
   private final int memoryCacheSize;  // max number of segments in cache
   private int hitNum;
@@ -136,7 +137,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
     totalNum++;
 
     // Load from memory cache
-    if (entries.containsKey(segment)) {
+    if (useCache && entries.containsKey(segment)) {
       returnSegment = entries.get(segment);
       log.info("Load segment: " + segment.getId() + " from cache successfully");
       hitNum++;
@@ -148,8 +149,9 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
 
       long loadEnd = System.nanoTime();
       totalLoadTime += (loadEnd - loadStart);
-      BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTime / 1000);
-      long totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).longValue();
+      double totalLoadTimeUs = totalLoadTime / 1000d;
+      BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTimeUs);
+      double totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
       log.info("Total load time: " + totalTimeOutput + " us");
 //    log.info("Total load time: " + totalLoadTime + " ns");
 
@@ -180,43 +182,45 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
     returnSegment = factory.factorize(segment, segmentFiles, lazy);
 
     // Put into memory cache
-    synchronized (lock) {
-      try {
-        // Eviction
-        if (entries.size() + 1 > memoryCacheSize) {
-          log.info("Need to evict a segment from cache");
-          // LRU
-          int numToEvict = 1;
-          int freeNum = 0;
-          for (Iterator<Entry<DataSegment, Segment>> it = entries.entrySet().iterator();
-              it.hasNext(); ) {
-            Map.Entry<DataSegment, Segment> entry = it.next();
-            it.remove();
-            log.info("Evict segment: " + entry.getKey().getId() + " successfully");
-            freeNum++;
-            if (freeNum >= numToEvict) {
-              break;
+    if (useCache) {
+      synchronized (lock) {
+        try {
+          // Eviction
+          if (entries.size() + 1 > memoryCacheSize) {
+            log.info("Need to evict a segment from cache");
+            // LRU
+            int numToEvict = 1;
+            int freeNum = 0;
+            for (Iterator<Entry<DataSegment, Segment>> it = entries.entrySet().iterator();
+                it.hasNext(); ) {
+              Map.Entry<DataSegment, Segment> entry = it.next();
+              it.remove();
+              log.info("Evict segment: " + entry.getKey().getId() + " successfully");
+              freeNum++;
+              if (freeNum >= numToEvict) {
+                break;
+              }
             }
           }
+
+          // Put into cache
+          entries.put(segment, returnSegment);
+          log.info("Put segment: " + segment.getId() + " into cache successfully");
+        } finally {
+          unlock(segment, lock);
         }
-
-        // Put into cache
-        entries.put(segment, returnSegment);
-        log.info("Put segment: " + segment.getId() + " into cache successfully");
-      } finally {
-        unlock(segment, lock);
       }
+      double hitRate = (double) hitNum / totalNum * 100;
+      BigDecimal hitRateDecimal = new BigDecimal(hitRate);
+      double hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+      log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRateOutput + "%");
     }
-
-    double hitRate = (double) hitNum / totalNum * 100;
-    BigDecimal hitRateDecimal = new BigDecimal(hitRate);
-    double hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
-    log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRateOutput + "%");
 
     long loadEnd = System.nanoTime();
     totalLoadTime += (loadEnd - loadStart);
-    BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTime / 1000);
-    long totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).longValue();
+    double totalLoadTimeUs = totalLoadTime / 1000d;
+    BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTimeUs);
+    double totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
     log.info("Total load time: " + totalTimeOutput + " us");
 //    log.info("Total load time: " + totalLoadTime + " ns");
 
