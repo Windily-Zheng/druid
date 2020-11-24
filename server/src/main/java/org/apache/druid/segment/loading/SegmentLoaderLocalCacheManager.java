@@ -22,6 +22,7 @@ package org.apache.druid.segment.loading;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.Inject;
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -62,6 +63,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
   private final int memoryCacheSize;  // max number of segments in cache
   private int hitNum;
   private int totalNum;
+  private double totalLoadTime; // time for getting segments
 
   /**
    * A map between segment and referenceCountingLocks.
@@ -106,6 +108,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
     this.memoryCacheSize = 100;
     this.hitNum = 0;
     this.totalNum = 0;
+    this.totalLoadTime = 0;
   }
 
   @Override
@@ -126,6 +129,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
 
   @Override
   public Segment getSegment(DataSegment segment, boolean lazy) throws SegmentLoadingException {
+    long loadStart = System.nanoTime();
     final ReferenceCountingLock lock = createOrGetLock(segment);
 
     Segment returnSegment;
@@ -136,6 +140,19 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
       returnSegment = entries.get(segment);
       log.info("Load segment: " + segment.getId() + " from cache successfully");
       hitNum++;
+
+      double hitRate = (double) hitNum / totalNum * 100;
+      BigDecimal hitRateDecimal = new BigDecimal(hitRate);
+      double hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+      log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRateOutput + "%");
+
+      long loadEnd = System.nanoTime();
+      totalLoadTime += (loadEnd - loadStart);
+      BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTime / 1000);
+      long totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).longValue();
+      log.info("Total load time: " + totalTimeOutput + " us");
+//    log.info("Total load time: " + totalLoadTime + " ns");
+
       return returnSegment;
     }
 
@@ -192,8 +209,16 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
     }
 
     double hitRate = (double) hitNum / totalNum * 100;
-    log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRate);
-//    log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + String.format("%.2f", hitRate));
+    BigDecimal hitRateDecimal = new BigDecimal(hitRate);
+    double hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+    log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRateOutput + "%");
+
+    long loadEnd = System.nanoTime();
+    totalLoadTime += (loadEnd - loadStart);
+    BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTime / 1000);
+    long totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).longValue();
+    log.info("Total load time: " + totalTimeOutput + " us");
+//    log.info("Total load time: " + totalLoadTime + " ns");
 
     return returnSegment;
   }
