@@ -59,7 +59,7 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
   private final Object directoryWriteRemoveLock = new Object();
 
   // Memory cache
-  private final boolean useCache = false;
+  private final boolean useCache = true;
   private final Map<DataSegment, Segment> entries = new LinkedHashMap<>(16, 0.75f, true);
   private final int memoryCacheSize;  // max number of segments in cache
   private int hitNum;
@@ -146,15 +146,15 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
 
       // Hit rate
       double hitRate = (double) hitNum / totalNum * 100;
-      BigDecimal hitRateDecimal = new BigDecimal(hitRate);
-      double hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+      BigDecimal hitRateDecimal = new BigDecimal(Double.toString(hitRate));
+      BigDecimal hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
       log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRateOutput + "%");
 
       // Total load time
       totalLoadTime += (loadEnd - loadStart);
-      double totalLoadTimeUs = totalLoadTime / 1000000d; // ns => ms
-      BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTimeUs);
-      double totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+      double totalLoadTimeMs = totalLoadTime / 1000000; // ns => ms
+      BigDecimal totalTimeDecimal = new BigDecimal(Double.toString(totalLoadTimeMs));
+      BigDecimal totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
       log.info("Total load time: " + totalTimeOutput + " ms");
 
       return returnSegment;
@@ -213,15 +213,15 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
 
           // Hit rate
           double hitRate = (double) hitNum / totalNum * 100;
-          BigDecimal hitRateDecimal = new BigDecimal(hitRate);
-          double hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+          BigDecimal hitRateDecimal = new BigDecimal(Double.toString(hitRate));
+          BigDecimal hitRateOutput = hitRateDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
           log.info("Hit rate: " + hitNum + " / " + totalNum + " = " + hitRateOutput + "%");
 
           // Total load time
           totalLoadTime += (loadEnd - loadStart);
-          double totalLoadTimeUs = totalLoadTime / 1000000d; // ns => ms
-          BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTimeUs);
-          double totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+          double totalLoadTimeMs = totalLoadTime / 1000000; // ns => ms
+          BigDecimal totalTimeDecimal = new BigDecimal(Double.toString(totalLoadTimeMs));
+          BigDecimal totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
           log.info("Total load time: " + totalTimeOutput + " ms");
         } finally {
           unlock(segment, lock);
@@ -233,9 +233,9 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
     // Total load time (for no cache version)
     long loadEnd = System.nanoTime();
     totalLoadTime += (loadEnd - loadStart);
-    double totalLoadTimeUs = totalLoadTime / 1000000d; // ns => ms
-    BigDecimal totalTimeDecimal = new BigDecimal(totalLoadTimeUs);
-    double totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue();
+    double totalLoadTimeMs = totalLoadTime / 1000000; // ns => ms
+    BigDecimal totalTimeDecimal = new BigDecimal(Double.toString(totalLoadTimeMs));
+    BigDecimal totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
     log.info("Total load time: " + totalTimeOutput + " ms");
 
     return returnSegment;
