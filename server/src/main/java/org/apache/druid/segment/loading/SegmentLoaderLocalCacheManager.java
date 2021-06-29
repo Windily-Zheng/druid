@@ -152,10 +152,11 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
 
       // Total load time
       totalLoadTime += (loadEnd - loadStart);
-      double totalLoadTimeMs = totalLoadTime / 1000000; // ns => ms
-      BigDecimal totalTimeDecimal = new BigDecimal(Double.toString(totalLoadTimeMs));
-      BigDecimal totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
-      log.info("Total load time: " + totalTimeOutput + " ms");
+//      double totalLoadTimeMs = totalLoadTime / 1000000; // ns => ms
+//      BigDecimal totalTimeDecimal = new BigDecimal(Double.toString(totalLoadTimeMs));
+//      BigDecimal totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
+//      log.info("Total load time: " + totalTimeOutput + " ms");
+      log.info("Total load time: " + totalLoadTime + " ns");
 
       return returnSegment;
     }
@@ -219,10 +220,11 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
 
           // Total load time
           totalLoadTime += (loadEnd - loadStart);
-          double totalLoadTimeMs = totalLoadTime / 1000000; // ns => ms
-          BigDecimal totalTimeDecimal = new BigDecimal(Double.toString(totalLoadTimeMs));
-          BigDecimal totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
-          log.info("Total load time: " + totalTimeOutput + " ms");
+//          double totalLoadTimeMs = totalLoadTime / 1000000; // ns => ms
+//          BigDecimal totalTimeDecimal = new BigDecimal(Double.toString(totalLoadTimeMs));
+//          BigDecimal totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
+//          log.info("Total load time: " + totalTimeOutput + " ms");
+          log.info("Total load time: " + totalLoadTime + " ns");
         } finally {
           unlock(segment, lock);
         }
@@ -233,10 +235,11 @@ public class SegmentLoaderLocalCacheManager implements SegmentLoader {
     // Total load time (for no cache version)
     long loadEnd = System.nanoTime();
     totalLoadTime += (loadEnd - loadStart);
-    double totalLoadTimeMs = totalLoadTime / 1000000; // ns => ms
-    BigDecimal totalTimeDecimal = new BigDecimal(Double.toString(totalLoadTimeMs));
-    BigDecimal totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
-    log.info("Total load time: " + totalTimeOutput + " ms");
+//    double totalLoadTimeMs = totalLoadTime / 1000000; // ns => ms
+//    BigDecimal totalTimeDecimal = new BigDecimal(Double.toString(totalLoadTimeMs));
+//    BigDecimal totalTimeOutput = totalTimeDecimal.setScale(2, BigDecimal.ROUND_HALF_UP);
+//    log.info("Total load time: " + totalTimeOutput + " ms");
+    log.info("Total load time: " + totalLoadTime + " ns");
 
     return returnSegment;
   }
